@@ -6,11 +6,9 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"fmt"
+	libhttp "github.com/bborbe/http"
 	"io"
-	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -46,38 +44,15 @@ func (a *application) Run(ctx context.Context, sentryClient libsentry.Client) er
 		return errors.Wrapf(ctx, err, "generate clientKey path failed")
 	}
 
-	// Load the client certificate and private key
-	clientCert, err := tls.LoadX509KeyPair(clientCertPath, clientKeyPath)
+	clientBuilder := libhttp.NewClientBuilder()
+	clientBuilder.WithClientCert(caCertPath, clientCertPath, clientKeyPath)
+	httpClient, err := clientBuilder.Build(ctx)
 	if err != nil {
-		return errors.Wrapf(ctx, err, "load client certificate and key failed")
-	}
-
-	// Load the CA certificate to verify the server
-	caCertPEM, err := os.ReadFile(caCertPath)
-	if err != nil {
-		return errors.Wrapf(ctx, err, "read CA certificate failed")
-	}
-	caCertPool := x509.NewCertPool()
-	if ok := caCertPool.AppendCertsFromPEM(caCertPEM); !ok {
-		return errors.Wrapf(ctx, err, "append CA certificate to pool failed")
-	}
-
-	// Set up TLS configuration with the client certificate and CA
-	tlsConfig := &tls.Config{
-		Certificates:       []tls.Certificate{clientCert},
-		RootCAs:            caCertPool,
-		InsecureSkipVerify: false, // Ensures server certificate is verified
-	}
-
-	// Create an HTTP client with the TLS configuration
-	client := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: tlsConfig,
-		},
+		return errors.Wrapf(ctx, err, "create httpClient failed")
 	}
 
 	// Make a request to an HTTPS server
-	resp, err := client.Get("https://localhost:8443/metrics") // Adjust URL as needed
+	resp, err := httpClient.Get("https://localhost:8443/metrics") // Adjust URL as needed
 	if err != nil {
 		return errors.Wrapf(ctx, err, "Failed to make request: %v", err)
 	}
