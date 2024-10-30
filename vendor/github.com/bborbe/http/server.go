@@ -20,7 +20,33 @@ func NewServerWithPort(port int, router http.Handler) run.Func {
 		router,
 	)
 }
+
 func NewServer(addr string, router http.Handler) run.Func {
+	return func(ctx context.Context) error {
+
+		server := &http.Server{
+			Addr:      addr,
+			Handler:   router,
+			TLSConfig: nil,
+		}
+		go func() {
+			select {
+			case <-ctx.Done():
+				if err := server.Shutdown(ctx); err != nil {
+					glog.Warningf("shutdown failed: %v", err)
+				}
+			}
+		}()
+		err := server.ListenAndServe()
+		if errors.Is(err, http.ErrServerClosed) {
+			glog.V(0).Info(err)
+			return nil
+		}
+		return errors.Wrapf(ctx, err, "httpServer failed")
+	}
+}
+
+func NewServerTLS(addr string, router http.Handler, serverCertPath string, serverKeyPath string) run.Func {
 	return func(ctx context.Context) error {
 		server := &http.Server{
 			Addr:    addr,
@@ -34,7 +60,7 @@ func NewServer(addr string, router http.Handler) run.Func {
 				}
 			}
 		}()
-		err := server.ListenAndServe()
+		err := server.ListenAndServeTLS(serverCertPath, serverKeyPath)
 		if errors.Is(err, http.ErrServerClosed) {
 			glog.V(0).Info(err)
 			return nil
