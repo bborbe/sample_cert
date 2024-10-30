@@ -13,7 +13,6 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"math/big"
-	"net"
 	"os"
 	"time"
 
@@ -55,8 +54,8 @@ func GenerateServerCert(ctx context.Context, caCertPath string, caKeyPath string
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
-		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")}, // Adjust IPs as needed
 		DNSNames:              []string{"localhost"},
+		//IPAddresses: []net.IP{net.ParseIP("127.0.0.1")}, // Adjust IPs as needed
 	}
 
 	// Sign the server certificate with the CA
