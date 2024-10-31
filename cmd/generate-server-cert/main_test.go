@@ -15,7 +15,7 @@ import (
 var _ = Describe("Main", func() {
 	It("Compiles", func() {
 		var err error
-		_, err = gexec.Build("github.com/bborbe/sample_cert/cmd/generate-cacert", "-mod=vendor")
+		_, err = gexec.Build("github.com/bborbe/sample_cert/cmd/generate-server-cert", "-mod=vendor")
 		Expect(err).NotTo(HaveOccurred())
 	})
 })
