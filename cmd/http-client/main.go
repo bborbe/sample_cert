@@ -7,13 +7,13 @@ package main
 import (
 	"context"
 	"fmt"
-	libhttp "github.com/bborbe/http"
 	"io"
 	"os"
 	"path"
 	"path/filepath"
 
 	"github.com/bborbe/errors"
+	libhttp "github.com/bborbe/http"
 	libsentry "github.com/bborbe/sentry"
 	"github.com/bborbe/service"
 )

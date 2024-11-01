@@ -2,9 +2,11 @@ module github.com/bborbe/sample_cert
 
 go 1.23.2
 
+//replace github.com/bborbe/http => ../http
+
 require (
 	github.com/bborbe/errors v1.3.0
-	github.com/bborbe/http v1.5.5
+	github.com/bborbe/http v1.5.6
 	github.com/bborbe/run v1.5.3
 	github.com/bborbe/sentry v1.7.0
 	github.com/bborbe/service v1.3.1
