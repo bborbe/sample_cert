@@ -60,8 +60,11 @@ func DynamicSamplingContextFromTransaction(span *Span) DynamicSamplingContext {
 	}
 
 	if dsn := client.dsn; dsn != nil {
-		if publicKey := dsn.publicKey; publicKey != "" {
+		if publicKey := dsn.GetPublicKey(); publicKey != "" {
 			entries["public_key"] = publicKey
+		}
+		if orgID := dsn.GetOrgID(); orgID != 0 {
+			entries["org_id"] = strconv.FormatUint(orgID, 10)
 		}
 	}
 	if release := client.options.Release; release != "" {
@@ -100,18 +103,20 @@ func (d DynamicSamplingContext) String() string {
 		}
 		members = append(members, member)
 	}
-	if len(members) > 0 {
-		baggage, err := baggage.New(members...)
-		if err != nil {
-			return ""
-		}
-		return baggage.String()
+
+	if len(members) == 0 {
+		return ""
 	}
 
-	return ""
+	baggage, err := baggage.New(members...)
+	if err != nil {
+		return ""
+	}
+
+	return baggage.String()
 }
 
-// Constructs a new DynamicSamplingContext using a scope and client. Accessing
+// DynamicSamplingContextFromScope Constructs a new DynamicSamplingContext using a scope and client. Accessing
 // fields on the scope are not thread safe, and this function should only be
 // called within scope methods.
 func DynamicSamplingContextFromScope(scope *Scope, client *Client) DynamicSamplingContext {
@@ -134,8 +139,11 @@ func DynamicSamplingContextFromScope(scope *Scope, client *Client) DynamicSampli
 	}
 
 	if dsn := client.dsn; dsn != nil {
-		if publicKey := dsn.publicKey; publicKey != "" {
+		if publicKey := dsn.GetPublicKey(); publicKey != "" {
 			entries["public_key"] = publicKey
+		}
+		if orgID := dsn.GetOrgID(); orgID != 0 {
+			entries["org_id"] = strconv.FormatUint(orgID, 10)
 		}
 	}
 	if release := client.options.Release; release != "" {

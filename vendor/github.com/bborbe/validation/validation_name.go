@@ -10,6 +10,9 @@ import (
 	"github.com/bborbe/errors"
 )
 
+// Name wraps a validator with a field name for better error messages.
+// It executes the wrapped validator and includes the field name in any error.
+// This is useful for providing context about which field failed validation.
 func Name(fieldname string, validation HasValidation) HasValidation {
 	return HasValidationFunc(func(ctx context.Context) error {
 		if err := validation.Validate(ctx); err != nil {

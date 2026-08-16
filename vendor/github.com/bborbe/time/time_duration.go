@@ -6,6 +6,7 @@ package time
 
 import (
 	"context"
+	"encoding"
 	"encoding/json"
 	"regexp"
 	"strconv"
@@ -39,7 +40,27 @@ var UnitMap = map[string]Duration{
 	"w":  Week,
 }
 
-var durationRegexp = regexp.MustCompile(`^((\d*\.?\d+)(w))?((\d*\.?\d+)(d))?((\d*\.?\d+)(h))?((\d*\.?\d+)(m))?((\d*\.?\d+)(s))?((\d*\.?\d+)(ms))?((\d*\.?\d+)(us))?((\d*\.?\d+)(ns))?$`)
+var durationRegexp = regexp.MustCompile(
+	`^((\d*\.?\d+)(w))?((\d*\.?\d+)(d))?((\d*\.?\d+)(h))?((\d*\.?\d+)(m))?((\d*\.?\d+)(s))?((\d*\.?\d+)(ms))?((\d*\.?\d+)(us))?((\d*\.?\d+)(ns))?$`,
+)
+
+type Durations []Duration
+
+func (t Durations) Interfaces() []interface{} {
+	result := make([]interface{}, len(t))
+	for i, ss := range t {
+		result[i] = ss
+	}
+	return result
+}
+
+func (t Durations) Strings() []string {
+	result := make([]string, len(t))
+	for i, ss := range t {
+		result[i] = ss.String()
+	}
+	return result
+}
 
 func ParseDurationDefault(ctx context.Context, value interface{}, defaultValue Duration) Duration {
 	result, err := ParseDuration(ctx, value)
@@ -50,6 +71,24 @@ func ParseDurationDefault(ctx context.Context, value interface{}, defaultValue D
 }
 
 func ParseDuration(ctx context.Context, value interface{}) (*Duration, error) {
+	if value == nil {
+		return nil, nil
+	}
+	switch v := value.(type) {
+	case Duration:
+		return v.Ptr(), nil
+	case *Duration:
+		return v, nil
+	case stdtime.Duration:
+		return Duration(v).Ptr(), nil
+	case *stdtime.Duration:
+		return DurationPtr(v), nil
+	case int64:
+		return Duration(v).Ptr(), nil
+	case *int64:
+		return Duration(*v).Ptr(), nil
+	}
+
 	str, err := parse.ParseString(ctx, value)
 	if err != nil {
 		return nil, errors.Wrapf(ctx, err, "parse value failed")
@@ -62,7 +101,12 @@ func ParseDuration(ctx context.Context, value interface{}) (*Duration, error) {
 	if len(str) > 0 && str[0] == '-' {
 		isNegative = true
 		str = str[1:]
+	} else if len(str) > 0 && str[0] == '+' {
+		// Remove optional + prefix (positive is default)
+		str = str[1:]
 	}
+	// Convert to lowercase to support both uppercase and lowercase units
+	str = strings.ToLower(str)
 	var result Duration
 	matches := durationRegexp.FindStringSubmatch(str)
 	if len(matches) == 0 {
@@ -98,10 +142,25 @@ func parseAsDuration(ctx context.Context, value string, unit string) (Duration, 
 	return Duration(i * float64(factor)), nil
 }
 
+func DurationPtr(time *stdtime.Duration) *Duration {
+	if time == nil {
+		return nil
+	}
+	return Duration(*time).Ptr()
+}
+
 type Duration stdtime.Duration
+
+var _ encoding.TextMarshaler = Duration(0)
+
+var _ encoding.TextUnmarshaler = (*Duration)(nil)
 
 func (d Duration) Duration() stdtime.Duration {
 	return stdtime.Duration(d)
+}
+
+func (d Duration) Abs() Duration {
+	return Duration(d.Duration().Abs())
 }
 
 func (d Duration) Ptr() *Duration {
@@ -109,7 +168,44 @@ func (d Duration) Ptr() *Duration {
 }
 
 func (d Duration) String() string {
-	return d.Duration().String()
+	var builder strings.Builder
+	remaining := d
+
+	if weeks := remaining / Week; weeks > 0 {
+		remaining = remaining - weeks*Week
+		builder.WriteString(strconv.Itoa(int(weeks)))
+		builder.WriteString("w")
+	}
+
+	if days := remaining / Day; days > 0 {
+		remaining = remaining - days*Day
+		builder.WriteString(strconv.Itoa(int(days)))
+		builder.WriteString("d")
+	}
+
+	if hours := remaining / Hour; hours > 0 {
+		remaining = remaining - hours*Hour
+		builder.WriteString(strconv.Itoa(int(hours)))
+		builder.WriteString("h")
+	}
+
+	if minutes := remaining / Minute; minutes > 0 {
+		remaining = remaining - minutes*Minute
+		builder.WriteString(strconv.Itoa(int(minutes)))
+		builder.WriteString("m")
+	}
+
+	if seconds := remaining / Second; seconds > 0 {
+		remaining = remaining - seconds*Second
+		builder.WriteString(strconv.Itoa(int(seconds)))
+		builder.WriteString("s")
+	}
+
+	if remaining > 0 || builder.Len() == 0 {
+		builder.WriteString(remaining.Duration().String())
+	}
+
+	return builder.String()
 }
 
 func (d *Duration) UnmarshalJSON(b []byte) error {
@@ -129,5 +225,28 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 }
 
 func (d Duration) MarshalJSON() ([]byte, error) {
+	// use stdtime.Duration.String to produce output in standard golang format
 	return json.Marshal(d.Duration().String())
+}
+
+func (d Duration) MarshalText() ([]byte, error) {
+	if d.Duration() == 0 {
+		return nil, nil
+	}
+	return []byte(d.Duration().String()), nil
+}
+
+func (d *Duration) UnmarshalText(b []byte) error {
+	str := string(b)
+	if len(str) == 0 {
+		*d = Duration(0)
+		return nil
+	}
+	ctx := context.Background()
+	duration, err := ParseDuration(ctx, str)
+	if err != nil {
+		return errors.Wrapf(ctx, err, "parse duration failed")
+	}
+	*d = *duration
+	return nil
 }

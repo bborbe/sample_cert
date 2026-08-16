@@ -8,8 +8,12 @@ import (
 	"context"
 )
 
+// Any represents a logical OR operation for multiple validators.
+// At least one validator must pass for the validation to succeed.
 type Any []HasValidation
 
+// Validate executes validators until one passes or all fail.
+// It returns nil if any validator succeeds, otherwise returns the last validation error.
 func (l Any) Validate(ctx context.Context) error {
 	var err error
 	for _, ll := range l {

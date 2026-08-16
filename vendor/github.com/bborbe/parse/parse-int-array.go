@@ -10,6 +10,10 @@ import (
 	"github.com/bborbe/errors"
 )
 
+// ParseIntArray converts an interface{} value to an int slice.
+// Supported types: []int, []interface{}, []int32, []int64, []float32, []float64, []string.
+// Each element is converted using ParseInt.
+// Returns an error if the value cannot be converted to []int.
 func ParseIntArray(ctx context.Context, value interface{}) ([]int, error) {
 	switch v := value.(type) {
 	case []int:
@@ -31,6 +35,8 @@ func ParseIntArray(ctx context.Context, value interface{}) ([]int, error) {
 	}
 }
 
+// ParseIntArrayDefault converts an interface{} value to an int slice, returning defaultValue on error.
+// This is a convenience wrapper around ParseIntArray that never returns an error.
 func ParseIntArrayDefault(ctx context.Context, value interface{}, defaultValue []int) []int {
 	result, err := ParseIntArray(ctx, value)
 	if err != nil {
@@ -39,6 +45,9 @@ func ParseIntArrayDefault(ctx context.Context, value interface{}, defaultValue [
 	return result
 }
 
+// ParseIntArrayFromInterfaces converts a slice of interface{} values to an int slice.
+// Each element is converted using ParseInt.
+// Returns an error if any element cannot be converted to int.
 func ParseIntArrayFromInterfaces(ctx context.Context, values []interface{}) ([]int, error) {
 	result := make([]int, len(values))
 	for i, vv := range values {
@@ -51,6 +60,8 @@ func ParseIntArrayFromInterfaces(ctx context.Context, values []interface{}) ([]i
 	return result, nil
 }
 
+// ToInterfaceList converts a typed slice to a slice of interface{}.
+// This is a generic helper function used internally for type conversion.
 func ToInterfaceList[T any](values []T) []interface{} {
 	result := make([]interface{}, len(values))
 	for i, value := range values {

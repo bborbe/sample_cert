@@ -10,6 +10,9 @@ import (
 	"github.com/bborbe/errors"
 )
 
+// Equal validates that the value equals the expected value.
+// It uses Go's built-in equality comparison for comparable types.
+// It returns an error if the values don't match, otherwise returns nil.
 func Equal[T comparable](value T, expected T) HasValidation {
 	return HasValidationFunc(func(ctx context.Context) error {
 		if value != expected {

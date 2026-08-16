@@ -1,427 +1,241 @@
 package sentry
 
 import (
-	"fmt"
-	"hash/crc32"
-	"math"
-	"regexp"
-	"sort"
-	"strings"
+	"context"
+	"maps"
+	"os"
+	"sync"
+	"time"
+
+	"github.com/getsentry/sentry-go/attribute"
+	"github.com/getsentry/sentry-go/internal/debuglog"
 )
 
-type (
-	NumberOrString interface {
-		int | string
-	}
-
-	void struct{}
+// Duration Units.
+const (
+	UnitNanosecond  = "nanosecond"
+	UnitMicrosecond = "microsecond"
+	UnitMillisecond = "millisecond"
+	UnitSecond      = "second"
+	UnitMinute      = "minute"
+	UnitHour        = "hour"
+	UnitDay         = "day"
+	UnitWeek        = "week"
 )
 
-var (
-	member     void
-	keyRegex   = regexp.MustCompile(`[^a-zA-Z0-9_/.-]+`)
-	valueRegex = regexp.MustCompile(`[^\w\d\s_:/@\.{}\[\]$-]+`)
-	unitRegex  = regexp.MustCompile(`[^a-z]+`)
+// Information Units.
+const (
+	UnitBit      = "bit"
+	UnitByte     = "byte"
+	UnitKilobyte = "kilobyte"
+	UnitKibibyte = "kibibyte"
+	UnitMegabyte = "megabyte"
+	UnitMebibyte = "mebibyte"
+	UnitGigabyte = "gigabyte"
+	UnitGibibyte = "gibibyte"
+	UnitTerabyte = "terabyte"
+	UnitTebibyte = "tebibyte"
+	UnitPetabyte = "petabyte"
+	UnitPebibyte = "pebibyte"
+	UnitExabyte  = "exabyte"
+	UnitExbibyte = "exbibyte"
 )
 
-type MetricUnit struct {
-	unit string
-}
+// Fraction Units.
+const (
+	UnitRatio   = "ratio"
+	UnitPercent = "percent"
+)
 
-func (m MetricUnit) toString() string {
-	return m.unit
-}
-
-func NanoSecond() MetricUnit {
-	return MetricUnit{
-		"nanosecond",
+// NewMeter returns a new Meter. If there is no Client bound to the current hub, or if metrics are disabled,
+// it returns a no-op Meter that discards all metrics.
+func NewMeter(ctx context.Context) Meter {
+	hub := GetHubFromContext(ctx)
+	if hub == nil {
+		hub = CurrentHub()
 	}
-}
+	client := hub.Client()
+	if client != nil && !client.options.DisableMetrics {
+		// build default attrs
+		serverAddr := client.options.ServerName
+		if serverAddr == "" {
+			serverAddr, _ = os.Hostname()
+		}
 
-func MicroSecond() MetricUnit {
-	return MetricUnit{
-		"microsecond",
-	}
-}
+		defaults := map[string]string{
+			"sentry.release":        client.options.Release,
+			"sentry.environment":    client.options.Environment,
+			"sentry.server.address": serverAddr,
+			"sentry.sdk.name":       client.sdkIdentifier,
+			"sentry.sdk.version":    client.sdkVersion,
+		}
 
-func MilliSecond() MetricUnit {
-	return MetricUnit{
-		"millisecond",
-	}
-}
+		defaultAttrs := make(map[string]attribute.Value)
+		for k, v := range defaults {
+			if v != "" {
+				defaultAttrs[k] = attribute.StringValue(v)
+			}
+		}
 
-func Second() MetricUnit {
-	return MetricUnit{
-		"second",
-	}
-}
-
-func Minute() MetricUnit {
-	return MetricUnit{
-		"minute",
-	}
-}
-
-func Hour() MetricUnit {
-	return MetricUnit{
-		"hour",
-	}
-}
-
-func Day() MetricUnit {
-	return MetricUnit{
-		"day",
-	}
-}
-
-func Week() MetricUnit {
-	return MetricUnit{
-		"week",
-	}
-}
-
-func Bit() MetricUnit {
-	return MetricUnit{
-		"bit",
-	}
-}
-
-func Byte() MetricUnit {
-	return MetricUnit{
-		"byte",
-	}
-}
-
-func KiloByte() MetricUnit {
-	return MetricUnit{
-		"kilobyte",
-	}
-}
-
-func KibiByte() MetricUnit {
-	return MetricUnit{
-		"kibibyte",
-	}
-}
-
-func MegaByte() MetricUnit {
-	return MetricUnit{
-		"megabyte",
-	}
-}
-
-func MebiByte() MetricUnit {
-	return MetricUnit{
-		"mebibyte",
-	}
-}
-
-func GigaByte() MetricUnit {
-	return MetricUnit{
-		"gigabyte",
-	}
-}
-
-func GibiByte() MetricUnit {
-	return MetricUnit{
-		"gibibyte",
-	}
-}
-
-func TeraByte() MetricUnit {
-	return MetricUnit{
-		"terabyte",
-	}
-}
-
-func TebiByte() MetricUnit {
-	return MetricUnit{
-		"tebibyte",
-	}
-}
-
-func PetaByte() MetricUnit {
-	return MetricUnit{
-		"petabyte",
-	}
-}
-
-func PebiByte() MetricUnit {
-	return MetricUnit{
-		"pebibyte",
-	}
-}
-
-func ExaByte() MetricUnit {
-	return MetricUnit{
-		"exabyte",
-	}
-}
-
-func ExbiByte() MetricUnit {
-	return MetricUnit{
-		"exbibyte",
-	}
-}
-
-func Ratio() MetricUnit {
-	return MetricUnit{
-		"ratio",
-	}
-}
-
-func Percent() MetricUnit {
-	return MetricUnit{
-		"percent",
-	}
-}
-
-func CustomUnit(unit string) MetricUnit {
-	return MetricUnit{
-		unitRegex.ReplaceAllString(unit, ""),
-	}
-}
-
-type Metric interface {
-	GetType() string
-	GetTags() map[string]string
-	GetKey() string
-	GetUnit() string
-	GetTimestamp() int64
-	SerializeValue() string
-	SerializeTags() string
-}
-
-type abstractMetric struct {
-	key  string
-	unit MetricUnit
-	tags map[string]string
-	// A unix timestamp (full seconds elapsed since 1970-01-01 00:00 UTC).
-	timestamp int64
-}
-
-func (am abstractMetric) GetTags() map[string]string {
-	return am.tags
-}
-
-func (am abstractMetric) GetKey() string {
-	return am.key
-}
-
-func (am abstractMetric) GetUnit() string {
-	return am.unit.toString()
-}
-
-func (am abstractMetric) GetTimestamp() int64 {
-	return am.timestamp
-}
-
-func (am abstractMetric) SerializeTags() string {
-	var sb strings.Builder
-
-	values := make([]string, 0, len(am.tags))
-	for k := range am.tags {
-		values = append(values, k)
-	}
-	sortSlice(values)
-
-	for _, key := range values {
-		val := sanitizeValue(am.tags[key])
-		key = sanitizeKey(key)
-		sb.WriteString(fmt.Sprintf("%s:%s,", key, val))
-	}
-	s := sb.String()
-	if len(s) > 0 {
-		s = s[:len(s)-1]
-	}
-	return s
-}
-
-// Counter Metric.
-type CounterMetric struct {
-	value float64
-	abstractMetric
-}
-
-func (c *CounterMetric) Add(value float64) {
-	c.value += value
-}
-
-func (c CounterMetric) GetType() string {
-	return "c"
-}
-
-func (c CounterMetric) SerializeValue() string {
-	return fmt.Sprintf(":%v", c.value)
-}
-
-// timestamp: A unix timestamp (full seconds elapsed since 1970-01-01 00:00 UTC).
-func NewCounterMetric(key string, unit MetricUnit, tags map[string]string, timestamp int64, value float64) CounterMetric {
-	am := abstractMetric{
-		key,
-		unit,
-		tags,
-		timestamp,
-	}
-
-	return CounterMetric{
-		value,
-		am,
-	}
-}
-
-// Distribution Metric.
-type DistributionMetric struct {
-	values []float64
-	abstractMetric
-}
-
-func (d *DistributionMetric) Add(value float64) {
-	d.values = append(d.values, value)
-}
-
-func (d DistributionMetric) GetType() string {
-	return "d"
-}
-
-func (d DistributionMetric) SerializeValue() string {
-	var sb strings.Builder
-	for _, el := range d.values {
-		sb.WriteString(fmt.Sprintf(":%v", el))
-	}
-	return sb.String()
-}
-
-// timestamp: A unix timestamp (full seconds elapsed since 1970-01-01 00:00 UTC).
-func NewDistributionMetric(key string, unit MetricUnit, tags map[string]string, timestamp int64, value float64) DistributionMetric {
-	am := abstractMetric{
-		key,
-		unit,
-		tags,
-		timestamp,
-	}
-
-	return DistributionMetric{
-		[]float64{value},
-		am,
-	}
-}
-
-// Gauge Metric.
-type GaugeMetric struct {
-	last  float64
-	min   float64
-	max   float64
-	sum   float64
-	count float64
-	abstractMetric
-}
-
-func (g *GaugeMetric) Add(value float64) {
-	g.last = value
-	g.min = math.Min(g.min, value)
-	g.max = math.Max(g.max, value)
-	g.sum += value
-	g.count++
-}
-
-func (g GaugeMetric) GetType() string {
-	return "g"
-}
-
-func (g GaugeMetric) SerializeValue() string {
-	return fmt.Sprintf(":%v:%v:%v:%v:%v", g.last, g.min, g.max, g.sum, g.count)
-}
-
-// timestamp: A unix timestamp (full seconds elapsed since 1970-01-01 00:00 UTC).
-func NewGaugeMetric(key string, unit MetricUnit, tags map[string]string, timestamp int64, value float64) GaugeMetric {
-	am := abstractMetric{
-		key,
-		unit,
-		tags,
-		timestamp,
-	}
-
-	return GaugeMetric{
-		value, // last
-		value, // min
-		value, // max
-		value, // sum
-		value, // count
-		am,
-	}
-}
-
-// Set Metric.
-type SetMetric[T NumberOrString] struct {
-	values map[T]void
-	abstractMetric
-}
-
-func (s *SetMetric[T]) Add(value T) {
-	s.values[value] = member
-}
-
-func (s SetMetric[T]) GetType() string {
-	return "s"
-}
-
-func (s SetMetric[T]) SerializeValue() string {
-	_hash := func(s string) uint32 {
-		return crc32.ChecksumIEEE([]byte(s))
-	}
-
-	values := make([]T, 0, len(s.values))
-	for k := range s.values {
-		values = append(values, k)
-	}
-	sortSlice(values)
-
-	var sb strings.Builder
-	for _, el := range values {
-		switch any(el).(type) {
-		case int:
-			sb.WriteString(fmt.Sprintf(":%v", el))
-		case string:
-			s := fmt.Sprintf("%v", el)
-			sb.WriteString(fmt.Sprintf(":%d", _hash(s)))
+		return &sentryMeter{
+			ctx:               ctx,
+			hub:               hub,
+			attributes:        make(map[string]attribute.Value),
+			defaultAttributes: defaultAttrs,
+			mu:                sync.RWMutex{},
 		}
 	}
 
-	return sb.String()
+	debuglog.Printf("fallback to noopMeter: metrics disabled")
+	return &noopMeter{}
 }
 
-// timestamp: A unix timestamp (full seconds elapsed since 1970-01-01 00:00 UTC).
-func NewSetMetric[T NumberOrString](key string, unit MetricUnit, tags map[string]string, timestamp int64, value T) SetMetric[T] {
-	am := abstractMetric{
-		key,
-		unit,
-		tags,
-		timestamp,
+type sentryMeter struct {
+	ctx               context.Context
+	hub               *Hub
+	attributes        map[string]attribute.Value
+	defaultAttributes map[string]attribute.Value
+	mu                sync.RWMutex
+}
+
+func (m *sentryMeter) emit(ctx context.Context, metricType MetricType, name string, value MetricValue, unit string, attributes map[string]attribute.Value, customScope *Scope) {
+	if name == "" {
+		debuglog.Println("empty name provided, dropping metric")
+		return
 	}
 
-	return SetMetric[T]{
-		map[T]void{
-			value: member,
-		},
-		am,
+	hub := hubFromContexts(ctx, m.ctx)
+	if hub == nil {
+		hub = m.hub
+	}
+
+	client := hub.Client()
+	if client == nil {
+		return
+	}
+
+	scope := hub.Scope()
+	if customScope != nil {
+		scope = customScope
+	}
+	traceID, spanID := resolveTrace(scope, client, ctx, m.ctx)
+
+	// Pre-allocate with capacity hint to avoid map growth reallocations
+	estimatedCap := len(m.defaultAttributes) + len(attributes) + 8 // scope ~3 + call-specific ~5
+	attrs := make(map[string]attribute.Value, estimatedCap)
+
+	// attribute precedence: default -> scope -> instance (from SetAttrs) -> entry-specific
+	for k, v := range m.defaultAttributes {
+		attrs[k] = v
+	}
+	scope.populateAttrs(attrs)
+
+	m.mu.RLock()
+	for k, v := range m.attributes {
+		attrs[k] = v
+	}
+	m.mu.RUnlock()
+
+	for k, v := range attributes {
+		attrs[k] = v
+	}
+
+	metric := &Metric{
+		Timestamp:  time.Now(),
+		TraceID:    traceID,
+		SpanID:     spanID,
+		Type:       metricType,
+		Name:       name,
+		Value:      value,
+		Unit:       unit,
+		Attributes: attrs,
+	}
+
+	if client.captureMetric(metric, scope) && client.options.Debug {
+		debuglog.Printf("Metric %s [%s]: %v %s", metricType, name, value.AsInterface(), unit)
 	}
 }
 
-func sanitizeKey(s string) string {
-	return keyRegex.ReplaceAllString(s, "_")
+// WithCtx returns a new Meter that uses the given context for trace/span association.
+func (m *sentryMeter) WithCtx(ctx context.Context) Meter {
+	m.mu.RLock()
+	attrsCopy := maps.Clone(m.attributes)
+	m.mu.RUnlock()
+
+	return &sentryMeter{
+		ctx:               ctx,
+		hub:               m.hub,
+		attributes:        attrsCopy,
+		defaultAttributes: m.defaultAttributes,
+		mu:                sync.RWMutex{},
+	}
 }
 
-func sanitizeValue(s string) string {
-	return valueRegex.ReplaceAllString(s, "")
+func (m *sentryMeter) applyOptions(opts []MeterOption) *meterOptions {
+	o := &meterOptions{}
+	for _, opt := range opts {
+		opt(o)
+	}
+	return o
 }
 
-type Ordered interface {
-	~int | ~int8 | ~int16 | ~int32 | ~int64 | ~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~uintptr | ~float32 | ~float64 | ~string
+// Count implements Meter.
+func (m *sentryMeter) Count(name string, count int64, opts ...MeterOption) {
+	o := m.applyOptions(opts)
+	m.emit(m.ctx, MetricTypeCounter, name, Int64MetricValue(count), o.unit, o.attributes, o.scope)
 }
 
-func sortSlice[T Ordered](s []T) {
-	sort.Slice(s, func(i, j int) bool {
-		return s[i] < s[j]
-	})
+// Distribution implements Meter.
+func (m *sentryMeter) Distribution(name string, sample float64, opts ...MeterOption) {
+	o := m.applyOptions(opts)
+	m.emit(m.ctx, MetricTypeDistribution, name, Float64MetricValue(sample), o.unit, o.attributes, o.scope)
+}
+
+// Gauge implements Meter.
+func (m *sentryMeter) Gauge(name string, value float64, opts ...MeterOption) {
+	o := m.applyOptions(opts)
+	m.emit(m.ctx, MetricTypeGauge, name, Float64MetricValue(value), o.unit, o.attributes, o.scope)
+}
+
+// SetAttributes implements Meter.
+func (m *sentryMeter) SetAttributes(attrs ...attribute.Builder) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, a := range attrs {
+		if a.Value.Type() == attribute.INVALID {
+			debuglog.Printf("invalid attribute: %v", a)
+			continue
+		}
+		m.attributes[a.Key] = a.Value
+	}
+}
+
+// noopMeter is a no-operation implementation of Meter.
+// This is used when there is no client available in the context or when metrics are disabled.
+type noopMeter struct{}
+
+// WithCtx implements Meter.
+func (n *noopMeter) WithCtx(_ context.Context) Meter {
+	return n
+}
+
+// Count implements Meter.
+func (n *noopMeter) Count(name string, _ int64, _ ...MeterOption) {
+	debuglog.Printf("Metric %q is being dropped. Turn on metrics by setting DisableMetrics to false", name)
+}
+
+// Distribution implements Meter.
+func (n *noopMeter) Distribution(name string, _ float64, _ ...MeterOption) {
+	debuglog.Printf("Metric %q is being dropped. Turn on metrics by setting DisableMetrics to false", name)
+}
+
+// Gauge implements Meter.
+func (n *noopMeter) Gauge(name string, _ float64, _ ...MeterOption) {
+	debuglog.Printf("Metric %q is being dropped. Turn on metrics by setting DisableMetrics to false", name)
+}
+
+// SetAttributes implements Meter.
+func (n *noopMeter) SetAttributes(_ ...attribute.Builder) {
+	debuglog.Printf("No attributes attached. Turn on metrics by setting DisableMetrics to false")
 }

@@ -6,15 +6,33 @@ package time
 
 import (
 	"context"
+	"encoding"
 	"encoding/json"
 	"strings"
 	stdtime "time"
 
 	"github.com/bborbe/errors"
 	"github.com/bborbe/parse"
-
 	"github.com/bborbe/validation"
 )
+
+type Dates []Date
+
+func (d Dates) Interfaces() []interface{} {
+	result := make([]interface{}, len(d))
+	for i, ss := range d {
+		result[i] = ss
+	}
+	return result
+}
+
+func (d Dates) Strings() []string {
+	result := make([]string, len(d))
+	for i, ss := range d {
+		result[i] = ss.String()
+	}
+	return result
+}
 
 func DateFromBinary(ctx context.Context, value []byte) (*Date, error) {
 	var t stdtime.Time
@@ -48,7 +66,23 @@ func ToDate(value stdtime.Time) Date {
 	return Date(stdtime.Date(year, month, day, 0, 0, 0, 0, stdtime.UTC))
 }
 
+// NewDate creates a Date representing the date specified by the given parameters.
+// It wraps the standard library's time.Date function with the same parameter signature.
+// Note: hour, min, sec, nsec and loc parameters are typically ignored for Date operations.
+func NewDate(
+	year int,
+	month stdtime.Month,
+	day, hour, min, sec, nsec int,
+	loc *stdtime.Location,
+) Date {
+	return Date(stdtime.Date(year, month, day, hour, min, sec, nsec, loc))
+}
+
 type Date stdtime.Time
+
+var _ encoding.TextMarshaler = Date{}
+
+var _ encoding.TextUnmarshaler = (*Date)(nil)
 
 func (d Date) Year() int {
 	return d.Time().Year()
@@ -77,17 +111,29 @@ func (d Date) Ptr() *Date {
 	return &d
 }
 
+func (d Date) Clone() Date {
+	return d
+}
+
+func (d *Date) ClonePtr() *Date {
+	if d == nil {
+		return nil
+	}
+	return d.Clone().Ptr()
+}
+
 func (d *Date) UnmarshalJSON(b []byte) error {
 	str := strings.Trim(string(b), `"`)
 	if len(str) == 0 || str == "null" {
 		*d = Date(stdtime.Time{})
 		return nil
 	}
-	t, err := stdtime.ParseInLocation(stdtime.DateOnly, str, stdtime.UTC)
+	// Use ParseTime which supports NOW, NOW-14d, NOW+1h, etc. and RFC3339/DateOnly formats
+	t, err := ParseTime(context.Background(), str)
 	if err != nil {
-		return errors.Wrapf(context.Background(), err, "parse in location failed")
+		return errors.Wrapf(context.Background(), err, "parse time failed")
 	}
-	*d = Date(t)
+	*d = ToDate(*t)
 	return nil
 }
 
@@ -99,11 +145,36 @@ func (d Date) MarshalJSON() ([]byte, error) {
 	return json.Marshal(time.Format(stdtime.DateOnly))
 }
 
-func (d *Date) Time() stdtime.Time {
-	return stdtime.Time(*d)
+func (d Date) MarshalText() ([]byte, error) {
+	t := d.Time()
+	if t.IsZero() {
+		return nil, nil
+	}
+	return []byte(t.Format(stdtime.DateOnly)), nil
+}
+
+func (d *Date) UnmarshalText(b []byte) error {
+	str := string(b)
+	if len(str) == 0 {
+		*d = Date(stdtime.Time{})
+		return nil
+	}
+	t, err := ParseTime(context.Background(), str)
+	if err != nil {
+		return errors.Wrapf(context.Background(), err, "parse time failed")
+	}
+	*d = ToDate(*t)
+	return nil
+}
+
+func (d Date) Time() stdtime.Time {
+	return stdtime.Time(d)
 }
 
 func (d *Date) TimePtr() *stdtime.Time {
+	if d == nil {
+		return nil
+	}
 	t := stdtime.Time(*d)
 	return &t
 }
@@ -133,8 +204,38 @@ func (d *Date) ComparePtr(stdTime *Date) int {
 	return d.Compare(*stdTime)
 }
 
-func (d Date) Add(duration stdtime.Duration) Date {
-	return Date(d.Time().Add(duration))
+func (d Date) Before(other HasTime) bool {
+	return d.Time().Before(other.Time())
+}
+
+func (d Date) After(other HasTime) bool {
+	return d.Time().After(other.Time())
+}
+
+func (d Date) Equal(other Date) bool {
+	return d.Time().Equal(other.Time())
+}
+
+func (d *Date) EqualPtr(other *Date) bool {
+	if d == nil && other == nil {
+		return true
+	}
+	if d != nil && other != nil {
+		return d.Equal(*other)
+	}
+	return false
+}
+
+func (d Date) Truncate(duration HasDuration) Date {
+	return Date(d.Time().Truncate(duration.Duration()))
+}
+
+func (d Date) Add(duration HasDuration) Date {
+	return Date(d.Time().Add(duration.Duration()))
+}
+
+func (d Date) Sub(time HasTime) Duration {
+	return Duration(d.Time().Sub(time.Time()))
 }
 
 func (d Date) UnixMicro() int64 {
@@ -143,4 +244,27 @@ func (d Date) UnixMicro() int64 {
 
 func (d Date) Unix() int64 {
 	return d.Time().Unix()
+}
+
+func (d Date) AddDate(years int, months int, days int) Date {
+	return Date(d.Time().AddDate(years, months, days))
+}
+
+// Deprecated: Use AddDate instead.
+// AddTime adds the given years, months, and days to the Date but will be removed in future versions.
+func (d Date) AddTime(years int, months int, days int) Date {
+	return d.AddDate(years, months, days)
+}
+
+func (d Date) UTC() Date {
+	return Date(d.Time().UTC())
+}
+
+func (d Date) Weekday() Weekday {
+	return Weekday(d.Time().Weekday())
+}
+
+// IsZero reports whether d represents the zero time instant.
+func (d Date) IsZero() bool {
+	return d.Time().IsZero()
 }

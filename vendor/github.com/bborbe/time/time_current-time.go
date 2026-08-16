@@ -9,15 +9,23 @@ import (
 	"time"
 )
 
+//counterfeiter:generate -o mocks/current-time-getter.go --fake-name CurrentTimeGetter . CurrentTimeGetter
 type CurrentTimeGetter interface {
 	Now() time.Time
 }
 
+type CurrentTimeGetterFunc func() DateTime
+
+func (c CurrentTimeGetterFunc) Now() DateTime {
+	return c()
+}
+
+//counterfeiter:generate -o mocks/current-time-setter.go --fake-name CurrentTimeSetter . CurrentTimeSetter
 type CurrentTimeSetter interface {
 	SetNow(now time.Time)
 }
 
-//counterfeiter:generate -o mocks/time-current-time.go --fake-name TimeCurrentTime . CurrentTime
+//counterfeiter:generate -o mocks/current-time.go --fake-name CurrentTime . CurrentTime
 type CurrentTime interface {
 	CurrentTimeGetter
 	CurrentTimeSetter

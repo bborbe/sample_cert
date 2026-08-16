@@ -6,11 +6,14 @@ package parse
 
 import (
 	"context"
+	"fmt"
 	"strconv"
-
-	"github.com/bborbe/errors"
 )
 
+// ParseFloat64 converts an interface{} value to a float64.
+// Supported types: int, int32, int64, float32, float64, string, fmt.Stringer.
+// String values are parsed using strconv.ParseFloat.
+// Returns an error if the value cannot be converted to float64.
 func ParseFloat64(ctx context.Context, value interface{}) (float64, error) {
 	switch v := value.(type) {
 	case int:
@@ -25,11 +28,15 @@ func ParseFloat64(ctx context.Context, value interface{}) (float64, error) {
 		return v, nil
 	case string:
 		return strconv.ParseFloat(v, 64)
+	case fmt.Stringer:
+		return ParseFloat64(ctx, v.String())
 	default:
-		return 0, errors.Errorf(ctx, "invalid type")
+		return ParseFloat64(ctx, fmt.Sprintf("%v", value))
 	}
 }
 
+// ParseFloat64Default converts an interface{} value to a float64, returning defaultValue on error.
+// This is a convenience wrapper around ParseFloat64 that never returns an error.
 func ParseFloat64Default(ctx context.Context, value interface{}, defaultValue float64) float64 {
 	result, err := ParseFloat64(ctx, value)
 	if err != nil {

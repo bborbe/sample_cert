@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Benjamin Borbe All rights reserved.
+// Copyright (c) 2024-2025 Benjamin Borbe All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -12,7 +12,9 @@ import (
 	"github.com/golang/glog"
 )
 
-// NewProxyRoundTripper allow overwrite sentry host without modifing the alert content.
+// NewProxyRoundTripper creates an HTTP RoundTripper that proxies Sentry requests to a
+// different host without modifying the alert content. This is useful for routing Sentry
+// traffic through a proxy server or testing with a local Sentry instance.
 func NewProxyRoundTripper(
 	roundtripper http.RoundTripper,
 	url string,
@@ -29,7 +31,7 @@ type roundTripper struct {
 }
 
 func (r *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	glog.V(4).Infof("orginal request to %s", req.URL.String())
+	glog.V(4).Infof("original request to %s", req.URL.String())
 	u, err := url.Parse(r.url)
 	if err != nil {
 		return nil, errors.Wrapf(req.Context(), err, "parse url %s failed", r.url)

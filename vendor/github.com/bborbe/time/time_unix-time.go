@@ -6,6 +6,7 @@ package time
 
 import (
 	"context"
+	"encoding"
 	"encoding/json"
 	"strconv"
 	"strings"
@@ -13,9 +14,26 @@ import (
 
 	"github.com/bborbe/errors"
 	"github.com/bborbe/parse"
-
 	"github.com/bborbe/validation"
 )
+
+type UnixTimes []UnixTime
+
+func (t UnixTimes) Interfaces() []interface{} {
+	result := make([]interface{}, len(t))
+	for i, ss := range t {
+		result[i] = ss
+	}
+	return result
+}
+
+func (t UnixTimes) Strings() []string {
+	result := make([]string, len(t))
+	for i, ss := range t {
+		result[i] = ss.String()
+	}
+	return result
+}
 
 func UnixTimeFromBinary(ctx context.Context, value []byte) (*UnixTime, error) {
 	var t stdtime.Time
@@ -68,7 +86,22 @@ func UnixTimeFromMicro(usec int64) UnixTime {
 	return UnixTime(stdtime.UnixMicro(usec))
 }
 
+// NewUnixTime creates a UnixTime representing the date and time specified by the given parameters.
+// It wraps the standard library's time.Date function with the same parameter signature.
+func NewUnixTime(
+	year int,
+	month stdtime.Month,
+	day, hour, min, sec, nsec int,
+	loc *stdtime.Location,
+) UnixTime {
+	return UnixTime(stdtime.Date(year, month, day, hour, min, sec, nsec, loc))
+}
+
 type UnixTime stdtime.Time
+
+var _ encoding.TextMarshaler = UnixTime{}
+
+var _ encoding.TextUnmarshaler = (*UnixTime)(nil)
 
 func (u UnixTime) Year() int {
 	return u.Time().Year()
@@ -127,6 +160,17 @@ func (u UnixTime) Ptr() *UnixTime {
 	return &u
 }
 
+func (u UnixTime) Clone() UnixTime {
+	return u
+}
+
+func (u *UnixTime) ClonePtr() *UnixTime {
+	if u == nil {
+		return nil
+	}
+	return u.Clone().Ptr()
+}
+
 func (u *UnixTime) UnmarshalJSON(b []byte) error {
 	str := strings.Trim(string(b), `"`)
 	n, err := strconv.ParseInt(str, 10, 64)
@@ -141,11 +185,36 @@ func (u UnixTime) MarshalJSON() ([]byte, error) {
 	return json.Marshal(u.Time().Unix())
 }
 
-func (u *UnixTime) Time() stdtime.Time {
-	return stdtime.Time(*u)
+func (u UnixTime) MarshalText() ([]byte, error) {
+	t := u.Time()
+	if t.IsZero() {
+		return nil, nil
+	}
+	return []byte(t.Format(stdtime.RFC3339Nano)), nil
+}
+
+func (u *UnixTime) UnmarshalText(b []byte) error {
+	str := string(b)
+	if len(str) == 0 {
+		*u = UnixTime(stdtime.Time{})
+		return nil
+	}
+	t, err := ParseTime(context.Background(), str)
+	if err != nil {
+		return errors.Wrapf(context.Background(), err, "parse time failed")
+	}
+	*u = UnixTime(*t)
+	return nil
+}
+
+func (u UnixTime) Time() stdtime.Time {
+	return stdtime.Time(u)
 }
 
 func (u *UnixTime) TimePtr() *stdtime.Time {
+	if u == nil {
+		return nil
+	}
 	t := stdtime.Time(*u)
 	return &t
 }
@@ -158,14 +227,74 @@ func (u UnixTime) MarshalBinary() ([]byte, error) {
 	return u.Time().MarshalBinary()
 }
 
-func (u UnixTime) Add(duration stdtime.Duration) UnixTime {
-	return UnixTime(u.Time().Add(duration))
+func (u UnixTime) Before(time HasTime) bool {
+	return u.Time().Before(time.Time())
 }
 
-func (d UnixTime) UnixMicro() int64 {
-	return d.Time().UnixMicro()
+func (u UnixTime) After(time HasTime) bool {
+	return u.Time().After(time.Time())
 }
 
-func (d UnixTime) Unix() int64 {
-	return d.Time().Unix()
+func (u UnixTime) Add(duration HasDuration) UnixTime {
+	return UnixTime(u.Time().Add(duration.Duration()))
+}
+
+func (u UnixTime) Sub(time HasTime) Duration {
+	return Duration(u.Time().Sub(time.Time()))
+}
+
+func (u UnixTime) UnixMicro() int64 {
+	return u.Time().UnixMicro()
+}
+
+func (u UnixTime) Unix() int64 {
+	return u.Time().Unix()
+}
+
+func (u UnixTime) Truncate(duration HasDuration) UnixTime {
+	return UnixTime(u.Time().Truncate(duration.Duration()))
+}
+
+func (u UnixTime) Compare(other UnixTime) int {
+	return Compare(u.Time(), other.Time())
+}
+
+func (u *UnixTime) ComparePtr(other *UnixTime) int {
+	if u == nil && other == nil {
+		return 0
+	}
+	if u == nil {
+		return -1
+	}
+	if other == nil {
+		return 1
+	}
+	return u.Compare(*other)
+}
+
+func (u UnixTime) DateTime() DateTime {
+	return DateTime(u)
+}
+
+func (u UnixTime) AddDate(years int, months int, days int) UnixTime {
+	return UnixTime(u.Time().AddDate(years, months, days))
+}
+
+// Deprecated: Use AddDate instead.
+// AddTime adds the given years, months, and days to the UnixTime but will be removed in future versions.
+func (u UnixTime) AddTime(years int, months int, days int) UnixTime {
+	return u.AddDate(years, months, days)
+}
+
+func (u UnixTime) UTC() UnixTime {
+	return UnixTime(u.Time().UTC())
+}
+
+func (u UnixTime) Weekday() Weekday {
+	return Weekday(u.Time().Weekday())
+}
+
+// IsZero reports whether u represents the zero time instant.
+func (u UnixTime) IsZero() bool {
+	return u.Time().IsZero()
 }

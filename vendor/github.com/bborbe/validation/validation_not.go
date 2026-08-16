@@ -10,6 +10,9 @@ import (
 	"github.com/bborbe/errors"
 )
 
+// Not inverts the result of a validator.
+// It returns nil if the wrapped validator fails, and an error if it succeeds.
+// Non-validation errors are passed through unchanged.
 func Not(hasValidation HasValidation) HasValidation {
 	return HasValidationFunc(func(ctx context.Context) error {
 		if err := hasValidation.Validate(ctx); err != nil {

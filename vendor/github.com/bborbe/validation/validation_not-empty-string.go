@@ -10,8 +10,9 @@ import (
 	"github.com/bborbe/errors"
 )
 
-// NotEmptyString return as valdation
-// that check if string is not empty
+// NotEmptyString validates that the string value is not empty.
+// It accepts any type that has string as its underlying type.
+// It returns an error if the string is empty, otherwise returns nil.
 func NotEmptyString[T ~string](value T) HasValidation {
 	return HasValidationFunc(func(ctx context.Context) error {
 		if len(value) == 0 {

@@ -6,6 +6,7 @@ package time
 
 import (
 	"context"
+	"encoding"
 	"encoding/json"
 	"strings"
 	stdtime "time"
@@ -16,7 +17,29 @@ import (
 
 const TimeOfDayLayout = "15:04:05.999999999Z07:00"
 
-func ParseTimeOfDayDefault(ctx context.Context, value interface{}, defaultValue TimeOfDay) TimeOfDay {
+type TimeOfDays []TimeOfDay
+
+func (t TimeOfDays) Interfaces() []interface{} {
+	result := make([]interface{}, len(t))
+	for i, ss := range t {
+		result[i] = ss
+	}
+	return result
+}
+
+func (t TimeOfDays) Strings() []string {
+	result := make([]string, len(t))
+	for i, ss := range t {
+		result[i] = ss.String()
+	}
+	return result
+}
+
+func ParseTimeOfDayDefault(
+	ctx context.Context,
+	value interface{},
+	defaultValue TimeOfDay,
+) TimeOfDay {
 	result, err := ParseTimeOfDay(ctx, value)
 	if err != nil {
 		return defaultValue
@@ -35,7 +58,7 @@ func ParseTimeOfDay(ctx context.Context, value interface{}) (*TimeOfDay, error) 
 		return TimeOfDayFromTime(now).Ptr(), nil
 	}
 	if parts := strings.Split(str, " "); len(parts) == 2 {
-		location, err := stdtime.LoadLocation(parts[1])
+		location, err := LoadLocation(ctx, parts[1])
 		if err != nil {
 			return nil, errors.Wrapf(ctx, err, "load location '%s' failed", parts[1])
 		}
@@ -51,6 +74,8 @@ func ParseTimeOfDay(ctx context.Context, value interface{}) (*TimeOfDay, error) 
 	for _, layout := range []string{
 		"15:04:05.999999999Z07:00",
 		"15:04:05.999999999",
+		"15:04:05Z07:00",
+		"15:04:05",
 		"15:04Z07:00",
 		"15:04",
 		stdtime.RFC3339Nano,
@@ -59,7 +84,7 @@ func ParseTimeOfDay(ctx context.Context, value interface{}) (*TimeOfDay, error) 
 	} {
 		t, err = stdtime.Parse(layout, str)
 		if err == nil {
-			return TimeOfDayFromTime(t).Ptr(), nil
+			return TimeOfDayFromTime(t.In(stdtime.UTC)).Ptr(), nil
 		}
 	}
 	return nil, errors.Wrapf(ctx, err, "parse timeOfDay failed")
@@ -82,6 +107,10 @@ type TimeOfDay struct {
 	Nanosecond int
 	Location   *stdtime.Location
 }
+
+var _ encoding.TextMarshaler = TimeOfDay{}
+
+var _ encoding.TextUnmarshaler = (*TimeOfDay)(nil)
 
 func (t TimeOfDay) String() string {
 	return t.Format(TimeOfDayLayout)
@@ -120,6 +149,24 @@ func (t *TimeOfDay) UnmarshalJSON(b []byte) error {
 
 func (t TimeOfDay) MarshalJSON() ([]byte, error) {
 	return json.Marshal(t.String())
+}
+
+func (t TimeOfDay) MarshalText() ([]byte, error) {
+	return []byte(t.String()), nil
+}
+
+func (t *TimeOfDay) UnmarshalText(b []byte) error {
+	str := string(b)
+	if len(str) == 0 {
+		*t = TimeOfDay{}
+		return nil
+	}
+	parsed, err := ParseTimeOfDay(context.Background(), str)
+	if err != nil {
+		return errors.Wrapf(context.Background(), err, "parse time of day failed")
+	}
+	*t = *parsed
+	return nil
 }
 
 func (t TimeOfDay) Ptr() *TimeOfDay {
