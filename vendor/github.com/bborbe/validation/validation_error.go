@@ -6,4 +6,6 @@ package validation
 
 import stderrors "errors"
 
+// Error is the base error used by all validation functions.
+// All validation errors are wrapped using this error for consistent error handling.
 var Error = stderrors.New("validation error")

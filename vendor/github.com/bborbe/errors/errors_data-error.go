@@ -14,7 +14,7 @@ type HasCause interface {
 }
 
 type HasData interface {
-	Data() map[string]string
+	Data() map[string]any
 }
 
 type DataError interface {
@@ -23,7 +23,7 @@ type DataError interface {
 	HasCause
 }
 
-func AddDataToError(err error, data map[string]string) DataError {
+func AddDataToError(err error, data map[string]any) DataError {
 	return &dataError{
 		err:  err,
 		data: data,
@@ -32,7 +32,7 @@ func AddDataToError(err error, data map[string]string) DataError {
 
 type dataError struct {
 	err  error
-	data map[string]string
+	data map[string]any
 }
 
 // Unwrap provides compatibility for Go 1.13 error chains.
@@ -46,7 +46,7 @@ func (d *dataError) Error() string {
 	return d.err.Error()
 }
 
-func (d *dataError) Data() map[string]string {
+func (d *dataError) Data() map[string]any {
 	return d.data
 }
 
@@ -59,12 +59,12 @@ func (d *dataError) Format(s fmt.State, verb rune) {
 		}
 		fallthrough
 	case 's', 'q':
-		io.WriteString(s, d.Error())
+		_, _ = io.WriteString(s, d.Error())
 	}
 }
 
-func DataFromError(err error) map[string]string {
-	data := make(map[string]string)
+func DataFromError(err error) map[string]any {
+	data := make(map[string]any)
 	for err != nil {
 		hasData, ok := err.(HasData)
 		if ok {

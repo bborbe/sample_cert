@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"go/token"
 	"go/types"
+	"iter"
 
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/types/typeutil"
@@ -255,27 +256,64 @@ func (r recoverReturn) String() string {
 
 type empty = struct{}
 
+// idx is an index representing a unique node in a vtaGraph.
+type idx int
+
 // vtaGraph remembers for each VTA node the set of its successors.
 // Tailored for VTA, hence does not support singleton (sub)graphs.
-type vtaGraph map[node]map[node]empty
+type vtaGraph struct {
+	m    []map[idx]empty // m[i] has the successors for the node with index i.
+	idx  map[node]idx    // idx[n] is the index for the node n.
+	node []node          // node[i] is the node with index i.
+}
+
+func (g *vtaGraph) numNodes() int {
+	return len(g.idx)
+}
+
+func (g *vtaGraph) successors(x idx) iter.Seq[idx] {
+	return func(yield func(y idx) bool) {
+		for y := range g.m[x] {
+			if !yield(y) {
+				return
+			}
+		}
+	}
+}
 
 // addEdge adds an edge x->y to the graph.
-func (g vtaGraph) addEdge(x, y node) {
-	succs, ok := g[x]
-	if !ok {
-		succs = make(map[node]empty)
-		g[x] = succs
+func (g *vtaGraph) addEdge(x, y node) {
+	if g.idx == nil {
+		g.idx = make(map[node]idx)
 	}
-	succs[y] = empty{}
+	lookup := func(n node) idx {
+		i, ok := g.idx[n]
+		if !ok {
+			i = idx(len(g.idx))
+			g.m = append(g.m, nil)
+			g.idx[n] = i
+			g.node = append(g.node, n)
+		}
+		return i
+	}
+	a := lookup(x)
+	b := lookup(y)
+	succs := g.m[a]
+	if succs == nil {
+		succs = make(map[idx]empty)
+		g.m[a] = succs
+	}
+	succs[b] = empty{}
 }
 
 // typePropGraph builds a VTA graph for a set of `funcs` and initial
 // `callgraph` needed to establish interprocedural edges. Returns the
 // graph and a map for unique type representatives.
-func typePropGraph(funcs map[*ssa.Function]bool, callees calleesFunc) (vtaGraph, *typeutil.Map) {
-	b := builder{graph: make(vtaGraph), callees: callees}
+func typePropGraph(funcs map[*ssa.Function]bool, callees calleesFunc) (*vtaGraph, *typeutil.Map) {
+	b := builder{callees: callees}
 	b.visit(funcs)
-	return b.graph, &b.canon
+	b.callees = nil // ensure callees is not pinned by pointers to other fields of b.
+	return &b.graph, &b.canon
 }
 
 // Data structure responsible for linearly traversing the
@@ -596,12 +634,12 @@ func (b *builder) call(c ssa.CallInstruction) {
 		return
 	}
 
-	siteCallees(c, b.callees)(func(f *ssa.Function) bool {
+	for f := range siteCallees(c, b.callees) {
 		addArgumentFlows(b, c, f)
 
 		site, ok := c.(ssa.Value)
 		if !ok {
-			return true // go or defer
+			continue // go or defer
 		}
 
 		results := f.Signature.Results()
@@ -616,12 +654,11 @@ func (b *builder) call(c ssa.CallInstruction) {
 				b.addInFlowEdge(resultVar{f: f, index: i}, local)
 			}
 		}
-		return true
-	})
+	}
 }
 
 func addArgumentFlows(b *builder, c ssa.CallInstruction, f *ssa.Function) {
-	// When f has no paremeters (including receiver), there is no type
+	// When f has no parameters (including receiver), there is no type
 	// flow here. Also, f's body and parameters might be missing, such
 	// as when vta is used within the golang.org/x/tools/go/analysis
 	// framework (see github.com/golang/go/issues/50670).
@@ -766,7 +803,7 @@ func (b *builder) nodeFromVal(val ssa.Value) node {
 		return function{f: v}
 	case *ssa.Parameter, *ssa.FreeVar, ssa.Instruction:
 		// ssa.Param, ssa.FreeVar, and a specific set of "register" instructions,
-		// satisifying the ssa.Value interface, can serve as local variables.
+		// satisfying the ssa.Value interface, can serve as local variables.
 		return local{val: v}
 	default:
 		panic(fmt.Errorf("unsupported value %v in node creation", val))

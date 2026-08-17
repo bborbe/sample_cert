@@ -10,8 +10,9 @@ import (
 	"github.com/bborbe/errors"
 )
 
-// NotEmptySlice return as valdation
-// that check if slice is not empty
+// NotEmptySlice validates that the slice is not empty.
+// It accepts slices of any type and checks that the length is greater than zero.
+// It returns an error if the slice is empty, otherwise returns nil.
 func NotEmptySlice[T any](values []T) HasValidation {
 	return HasValidationFunc(func(ctx context.Context) error {
 		if len(values) == 0 {

@@ -10,6 +10,8 @@ import (
 	"github.com/bborbe/errors"
 )
 
+// NotNil validates that the given value is not nil.
+// It returns an error if the value is nil, otherwise returns nil.
 func NotNil(value any) HasValidation {
 	return HasValidationFunc(func(ctx context.Context) error {
 		if Nil(value).Validate(ctx) == nil {

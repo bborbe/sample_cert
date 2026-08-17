@@ -10,7 +10,9 @@ import (
 	"github.com/bborbe/errors"
 )
 
-// NotNilAndValid checks if arg is not and if arg valid
+// NotNilAndValid validates that the value is not nil AND passes the provided validation.
+// It ensures the validator is not nil before executing the validation logic.
+// This is useful for required fields that must be present and valid.
 func NotNilAndValid(value HasValidation) HasValidation {
 	return HasValidationFunc(func(ctx context.Context) error {
 		if Nil(value).Validate(ctx) == nil {

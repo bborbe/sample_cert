@@ -6,12 +6,21 @@ package parse
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
+	"reflect"
 	"strconv"
 
 	"github.com/bborbe/errors"
 )
 
+// ErrInvalidType is returned when a value cannot be converted to the requested type.
+var ErrInvalidType = stderrors.New("invalid type")
+
+// ParseString converts an interface{} value to a string.
+// Supported types: string, bool, int, int32, int64, uint, uint32, uint64, float32, float64, fmt.Stringer.
+// Custom types derived from string are automatically detected and handled.
+// Returns an error if the value cannot be converted to string.
 func ParseString(ctx context.Context, value interface{}) (string, error) {
 	switch v := value.(type) {
 	case string:
@@ -37,10 +46,20 @@ func ParseString(ctx context.Context, value interface{}) (string, error) {
 	case fmt.Stringer:
 		return v.String(), nil
 	default:
-		return "", errors.Errorf(ctx, "invalid type")
+		if isSubtypeOfString(value) {
+			return ParseString(ctx, fmt.Sprintf("%s", value))
+		}
+		return "", errors.Wrapf(ctx, ErrInvalidType, "parse failed")
 	}
 }
 
+func isSubtypeOfString(value interface{}) bool {
+	t := reflect.TypeOf(value)
+	return t != nil && t.Kind() == reflect.String
+}
+
+// ParseStringDefault converts an interface{} value to a string, returning defaultValue on error.
+// This is a convenience wrapper around ParseString that never returns an error.
 func ParseStringDefault(ctx context.Context, value interface{}, defaultValue string) string {
 	result, err := ParseString(ctx, value)
 	if err != nil {

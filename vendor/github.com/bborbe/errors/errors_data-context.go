@@ -6,39 +6,32 @@ package errors
 
 import (
 	"context"
-	"sync"
 )
 
 type dataCtxKeyType string
 
 const dataCtxKey dataCtxKeyType = "data"
 
-var mutex sync.Mutex
-
 func AddContextDataToError(ctx context.Context, err error) error {
 	return AddDataToError(err, DataFromContext(ctx))
 }
 
-func AddToContext(ctx context.Context, key, value string) context.Context {
-	v := ctx.Value(dataCtxKey)
-	if v == nil {
-		return context.WithValue(ctx, dataCtxKey, map[string]string{
-			key: value,
-		})
+func AddToContext(ctx context.Context, key string, value any) context.Context {
+	newData := map[string]any{key: value}
+	if v := ctx.Value(dataCtxKey); v != nil {
+		if data, ok := v.(map[string]any); ok {
+			for k, v := range data {
+				newData[k] = v
+			}
+		}
 	}
-	data, ok := v.(map[string]string)
-	if ok {
-		mutex.Lock()
-		data[key] = value
-		mutex.Unlock()
-	}
-	return ctx
+	return context.WithValue(ctx, dataCtxKey, newData)
 }
 
-func DataFromContext(ctx context.Context) map[string]string {
+func DataFromContext(ctx context.Context) map[string]any {
 	value := ctx.Value(dataCtxKey)
 	if value == nil {
 		return nil
 	}
-	return value.(map[string]string)
+	return value.(map[string]any)
 }

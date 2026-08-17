@@ -10,8 +10,12 @@ import (
 	"github.com/bborbe/errors"
 )
 
+// Either represents an exclusive OR operation for multiple validators.
+// Exactly one validator must pass for the validation to succeed.
 type Either []HasValidation
 
+// Validate executes all validators and ensures exactly one passes.
+// It returns an error if zero or more than one validator succeeds.
 func (l Either) Validate(ctx context.Context) error {
 	if len(l) == 0 {
 		return errors.Wrapf(ctx, Error, "either can't be empty")

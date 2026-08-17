@@ -4,6 +4,8 @@
 
 package validation
 
+// True validates that the boolean value is true.
+// It returns an error if the value is false, otherwise returns nil.
 func True(value bool) HasValidation {
 	return Equal(value, true)
 }

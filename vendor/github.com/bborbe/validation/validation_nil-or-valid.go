@@ -4,7 +4,9 @@
 
 package validation
 
-// NilOrValid is valid if arg is nil or arg is valid
+// NilOrValid validates that the value is either nil or passes the provided validation.
+// It succeeds if the validator itself is nil OR if the validator passes its validation.
+// This is useful for optional fields that should be validated only when present.
 func NilOrValid(validation HasValidation) HasValidation {
 	return Any{
 		Nil(validation),

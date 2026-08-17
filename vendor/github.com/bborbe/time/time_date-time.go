@@ -6,15 +6,33 @@ package time
 
 import (
 	"context"
+	"encoding"
 	"encoding/json"
 	"strings"
 	stdtime "time"
 
 	"github.com/bborbe/errors"
 	"github.com/bborbe/parse"
-
 	"github.com/bborbe/validation"
 )
+
+type DateTimes []DateTime
+
+func (t DateTimes) Interfaces() []interface{} {
+	result := make([]interface{}, len(t))
+	for i, ss := range t {
+		result[i] = ss
+	}
+	return result
+}
+
+func (t DateTimes) Strings() []string {
+	result := make([]string, len(t))
+	for i, ss := range t {
+		result[i] = ss.String()
+	}
+	return result
+}
 
 func DateTimeFromBinary(ctx context.Context, value []byte) (*DateTime, error) {
 	var t stdtime.Time
@@ -51,11 +69,26 @@ func DateTimePtr(time *stdtime.Time) *DateTime {
 	return DateTime(*time).Ptr()
 }
 
+// NewDateTime creates a DateTime representing the date and time specified by the given parameters.
+// It wraps the standard library's time.Date function with the same parameter signature.
+func NewDateTime(
+	year int,
+	month stdtime.Month,
+	day, hour, min, sec, nsec int,
+	loc *stdtime.Location,
+) DateTime {
+	return DateTime(stdtime.Date(year, month, day, hour, min, sec, nsec, loc))
+}
+
 func DateTimeFromUnixMicro(ms int64) DateTime {
 	return DateTime(stdtime.UnixMicro(ms))
 }
 
 type DateTime stdtime.Time
+
+var _ encoding.TextMarshaler = DateTime{}
+
+var _ encoding.TextUnmarshaler = (*DateTime)(nil)
 
 func (d DateTime) Year() int {
 	return d.Time().Year()
@@ -116,16 +149,19 @@ func (d DateTime) Ptr() *DateTime {
 
 func (d *DateTime) UnmarshalJSON(b []byte) error {
 	str := strings.Trim(string(b), `"`)
-	if len(str) == 0 || str == "null" {
+	switch str {
+	case "", "null":
 		*d = DateTime(stdtime.Time{})
 		return nil
+	default:
+		// Use ParseTime which supports NOW, NOW-14d, NOW+1h, etc. and RFC3339 formats
+		t, err := ParseTime(context.Background(), str)
+		if err != nil {
+			return errors.Wrapf(context.Background(), err, "parse time failed")
+		}
+		*d = DateTime(*t)
+		return nil
 	}
-	t, err := stdtime.ParseInLocation(stdtime.RFC3339Nano, str, stdtime.UTC)
-	if err != nil {
-		return errors.Wrapf(context.Background(), err, "parse in location failed")
-	}
-	*d = DateTime(t)
-	return nil
 }
 
 func (d DateTime) MarshalJSON() ([]byte, error) {
@@ -136,11 +172,36 @@ func (d DateTime) MarshalJSON() ([]byte, error) {
 	return json.Marshal(time.Format(stdtime.RFC3339Nano))
 }
 
-func (d *DateTime) Time() stdtime.Time {
-	return stdtime.Time(*d)
+func (d DateTime) MarshalText() ([]byte, error) {
+	t := d.Time()
+	if t.IsZero() {
+		return nil, nil
+	}
+	return []byte(t.Format(stdtime.RFC3339Nano)), nil
+}
+
+func (d *DateTime) UnmarshalText(b []byte) error {
+	str := string(b)
+	if len(str) == 0 {
+		*d = DateTime(stdtime.Time{})
+		return nil
+	}
+	t, err := ParseTime(context.Background(), str)
+	if err != nil {
+		return errors.Wrapf(context.Background(), err, "parse time failed")
+	}
+	*d = DateTime(*t)
+	return nil
+}
+
+func (d DateTime) Time() stdtime.Time {
+	return stdtime.Time(d)
 }
 
 func (d *DateTime) TimePtr() *stdtime.Time {
+	if d == nil {
+		return nil
+	}
 	t := stdtime.Time(*d)
 	return &t
 }
@@ -172,16 +233,20 @@ func (d DateTime) Unix() int64 {
 	return d.Time().Unix()
 }
 
-func (d DateTime) Before(stdTime DateTime) bool {
-	return d.Time().Before(stdTime.Time())
+func (d DateTime) Before(time HasTime) bool {
+	return d.Time().Before(time.Time())
 }
 
-func (d DateTime) After(stdTime DateTime) bool {
-	return d.Time().After(stdTime.Time())
+func (d DateTime) After(time HasTime) bool {
+	return d.Time().After(time.Time())
 }
 
-func (d DateTime) Add(duration stdtime.Duration) DateTime {
-	return DateTime(d.Time().Add(duration))
+func (d DateTime) Add(duration HasDuration) DateTime {
+	return DateTime(d.Time().Add(duration.Duration()))
+}
+
+func (d DateTime) Sub(time HasTime) Duration {
+	return Duration(d.Time().Sub(time.Time()))
 }
 
 func (d DateTime) Compare(stdTime DateTime) int {
@@ -199,4 +264,31 @@ func (d *DateTime) ComparePtr(stdTime *DateTime) int {
 		return 1
 	}
 	return d.Compare(*stdTime)
+}
+
+func (d DateTime) Truncate(duration HasDuration) DateTime {
+	return DateTime(d.Time().Truncate(duration.Duration()))
+}
+
+func (d DateTime) AddDate(years int, months int, days int) DateTime {
+	return DateTime(d.Time().AddDate(years, months, days))
+}
+
+// Deprecated: Use AddDate instead.
+// AddTime adds the given years, months, and days to the DateTime but will be removed in future versions.
+func (d DateTime) AddTime(years int, months int, days int) DateTime {
+	return d.AddDate(years, months, days)
+}
+
+func (d DateTime) UTC() DateTime {
+	return DateTime(d.Time().UTC())
+}
+
+func (d DateTime) Weekday() Weekday {
+	return Weekday(d.Time().Weekday())
+}
+
+// IsZero reports whether d represents the zero time instant.
+func (d DateTime) IsZero() bool {
+	return d.Time().IsZero()
 }

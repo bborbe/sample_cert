@@ -14,15 +14,27 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-// ParseAscii returns a the given string converted to ascii
-func ParseAscii(ctx context.Context, value interface{}) (string, error) {
+// ParseASCII returns a the given string converted to ascii
+func ParseASCII(ctx context.Context, value interface{}) (string, error) {
 	str, err := ParseString(ctx, value)
 	if err != nil {
 		return "", errors.Wrapf(ctx, err, "convert to ascii failed")
 	}
-	result, _, err := transform.String(transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn))), str)
+	result, _, err := transform.String(
+		transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn))),
+		str,
+	)
 	if err != nil {
 		return "", err
 	}
 	return result, nil
+}
+
+// ParseAscii returns a the given string converted to ascii
+//
+// Deprecated: Use ParseASCII instead.
+//
+//revive:disable-next-line var-naming
+func ParseAscii(ctx context.Context, value interface{}) (string, error) {
+	return ParseASCII(ctx, value)
 }

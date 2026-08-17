@@ -11,10 +11,14 @@ import (
 	"github.com/bborbe/errors"
 )
 
+// Nil validates that the given value is nil.
+// It handles both nil interfaces and nil pointers correctly.
+// It returns an error if the value is not nil, otherwise returns nil.
 func Nil(value any) HasValidation {
 	return HasValidationFunc(func(ctx context.Context) error {
 		// reflect.ValueOf(value).IsZero()
-		if value == nil || (reflect.ValueOf(value).Kind() == reflect.Ptr && reflect.ValueOf(value).IsNil()) {
+		if value == nil ||
+			(reflect.ValueOf(value).Kind() == reflect.Ptr && reflect.ValueOf(value).IsNil()) {
 			return nil
 		}
 		return errors.Wrapf(ctx, Error, "should be nil")
