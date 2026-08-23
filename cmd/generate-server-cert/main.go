@@ -11,10 +11,11 @@ import (
 	"path/filepath"
 
 	"github.com/bborbe/errors"
-	"github.com/bborbe/sample_cert/pkg"
 	libsentry "github.com/bborbe/sentry"
 	"github.com/bborbe/service"
 	"github.com/golang/glog"
+
+	"github.com/bborbe/sample_cert/pkg"
 )
 
 func main() {
